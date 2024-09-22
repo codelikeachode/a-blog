@@ -1,0 +1,34 @@
+<!-- templates/admin/dashboard.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - My Personal Blog</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <header>
+        <h1>Admin Dashboard</h1>
+        <nav>
+            <a href="{{ url_for('home') }}">View Blog</a>
+            <a href="{{ url_for('add_article') }}">Add New Article</a>
+            <a href="{{ url_for('logout') }}">Logout</a>
+        </nav>
+    </header>
+    <main>
+        <h2>Your Articles</h2>
+        {% for article in articles %}
+            <article>
+                <h3>{{ article.title }}</h3>
+                <p>Published on: {{ article.date }}</p>
+                <a href="{{ url_for('edit_article', id=article.id) }}">Edit</a>
+                <a href="{{ url_for('delete_article', id=article.id) }}" onclick="return confirm('Are you sure you want to delete this article?');">Delete</a>
+            </article>
+        {% endfor %}
+    </main>
+    <footer>
+        <p>&copy; 2024 My Personal Blog</p>
+    </footer>
+</body>
+</html>
