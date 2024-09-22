@@ -64,3 +64,15 @@ def add_article():
         flash('Article added successfully', 'success')
         return redirect(url_for('admin'))
     return render_template('admin/add_article.html')
+
+@app.route('/admin/edit/<int:id>', methods=['GET', 'POST'])
+@login_required
+def edit_article(id):
+    article = Article.query.get_or_404(id)
+    if request.method == 'POST':
+        article.title = request.form['title']
+        article.content = request.form['content']
+        db.session.commit()
+        flash('Article updated successfully', 'success')
+        return redirect(url_for('admin'))
+    return render_template('admin/edit_article.html', article=article)
