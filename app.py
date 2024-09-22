@@ -1,78 +1,120 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
-from flask_sqlalchemy import SQLAlchemy
+# app.py
+from flask import Flask, render_template, request, redirect, url_for, session, flash
+import os
+import json
 from datetime import datetime
-from werkzeug.security import generate_password_hash, check_password_hash
-from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = ''
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite://blog.db'
-db = SQLAlchemy(app)
-login_manager = LoginManager(app)
-login_manager.login_view = 'login'
+app.secret_key = 'your_secret_key'  # Change this to a random secret key
 
+ARTICLES_DIR = 'articles'
+if not os.path.exists(ARTICLES_DIR):
+    os.makedirs(ARTICLES_DIR)
 
-class User(UserMixin, db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(120), nullable=False)
+# Hardcoded admin credentials (replace with more secure method in production)
+ADMIN_USERNAME = 'admin'
+ADMIN_PASSWORD = 'password'
 
-    def set_password(self, password):
-        self.password_hash = generate_password_hash(password)
-
-    
-    def check_password(self, password):
-        return check_password_hash(self.password_hash, password)
-    
-
-class Article(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(100), nullable=False)
-    content = db.Column(db.Text, nullable=False)
-    date_published = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-
-
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
+def get_articles():
+    articles = []
+    for filename in os.listdir(ARTICLES_DIR):
+        if filename.endswith('.json'):
+            with open(os.path.join(ARTICLES_DIR, filename), 'r') as f:
+                article = json.load(f)
+                articles.append(article)
+    return sorted(articles, key=lambda x: x['date'], reverse=True)
 
 @app.route('/')
 def home():
-    articles = Article.query.order_by(Article.date_published.desc()).all()
+    articles = get_articles()
     return render_template('home.html', articles=articles)
 
-@app.route('/article/<int:id>'):
+@app.route('/article/<string:id>')
 def article(id):
-    article = Article.query.get_or_404(id)
-    return render_template('article.html', article=article)
+    filename = f"{id}.json"
+    filepath = os.path.join(ARTICLES_DIR, filename)
+    if os.path.exists(filepath):
+        with open(filepath, 'r') as f:
+            article = json.load(f)
+        return render_template('article.html', article=article)
+    return "Article not found", 404
 
 @app.route('/admin')
-@login_required
 def admin():
-    articles = Article.query.order_by(Article.date_published.desc()).all()
+    if 'logged_in' not in session:
+        return redirect(url_for('login'))
+    articles = get_articles()
     return render_template('admin/dashboard.html', articles=articles)
 
 @app.route('/admin/add', methods=['GET', 'POST'])
-@login_required
 def add_article():
+    if 'logged_in' not in session:
+        return redirect(url_for('login'))
     if request.method == 'POST':
         title = request.form['title']
         content = request.form['content']
-        new_article = Article(title=title, content=content)
-        db.session.add(new_article)
-        db.session.commit()
+        date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        id = str(int(datetime.now().timestamp()))
+        article = {
+            'id': id,
+            'title': title,
+            'content': content,
+            'date': date
+        }
+        with open(os.path.join(ARTICLES_DIR, f"{id}.json"), 'w') as f:
+            json.dump(article, f)
         flash('Article added successfully', 'success')
         return redirect(url_for('admin'))
     return render_template('admin/add_article.html')
 
-@app.route('/admin/edit/<int:id>', methods=['GET', 'POST'])
-@login_required
+@app.route('/admin/edit/<string:id>', methods=['GET', 'POST'])
 def edit_article(id):
-    article = Article.query.get_or_404(id)
+    if 'logged_in' not in session:
+        return redirect(url_for('login'))
+    filepath = os.path.join(ARTICLES_DIR, f"{id}.json")
     if request.method == 'POST':
-        article.title = request.form['title']
-        article.content = request.form['content']
-        db.session.commit()
+        article = {
+            'id': id,
+            'title': request.form['title'],
+            'content': request.form['content'],
+            'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        with open(filepath, 'w') as f:
+            json.dump(article, f)
         flash('Article updated successfully', 'success')
         return redirect(url_for('admin'))
-    return render_template('admin/edit_article.html', article=article)
+    else:
+        if os.path.exists(filepath):
+            with open(filepath, 'r') as f:
+                article = json.load(f)
+            return render_template('admin/edit_article.html', article=article)
+    return "Article not found", 404
+
+@app.route('/admin/delete/<string:id>')
+def delete_article(id):
+    if 'logged_in' not in session:
+        return redirect(url_for('login'))
+    filepath = os.path.join(ARTICLES_DIR, f"{id}.json")
+    if os.path.exists(filepath):
+        os.remove(filepath)
+        flash('Article deleted successfully', 'success')
+    return redirect(url_for('admin'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+            session['logged_in'] = True
+            return redirect(url_for('admin'))
+        flash('Invalid credentials', 'error')
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.pop('logged_in', None)
+    return redirect(url_for('home'))
+
+if __name__ == '__main__':
+    app.run(debug=True)
